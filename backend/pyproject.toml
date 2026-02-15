@@ -1,0 +1,24 @@
+[project]
+name = "travel-assistant-backend"
+version = "1.0.0"
+description = "AI-powered travel planning assistant backend"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.129.0",
+    "uvicorn>=0.40.0",
+    "langchain>=1.2.10",
+    "langchain-core>=1.2.13",
+    "langchain-groq>=1.1.2",
+    "langgraph>=1.0.8",
+    "pydantic>=2.12.5",
+    "httpx>=0.28.1",
+    "python-dotenv>=1.2.1",
+    "slowapi>=0.1.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
+    "httpx>=0.28.1",
+]
