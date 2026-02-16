@@ -27,7 +27,7 @@ from app.prompts import (
     SANITIZED_RESPONSE,
     TRAVEL_ASSISTANT_SYSTEM_PROMPT,
 )
-from app.tools import get_country_info, get_weather
+from app.tools import get_country_info, get_exchange_rate, get_public_holidays, get_weather
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ def _get_react_agent():
     """Build and cache the inner ReAct agent (no checkpointer — outer graph handles memory)."""
     return create_react_agent(
         model=_main_llm(),
-        tools=[get_weather, get_country_info],
+        tools=[get_weather, get_country_info, get_exchange_rate, get_public_holidays],
         prompt=TRAVEL_ASSISTANT_SYSTEM_PROMPT,
     )
 

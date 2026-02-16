@@ -2,7 +2,7 @@
 
 AI-powered travel planning assistant built with **Next.js**, **FastAPI**, **LangGraph**, and **Groq**.
 
-Handles destination recommendations, packing suggestions (with chain-of-thought reasoning), and local attractions — augmented with real-time weather and country data from external APIs.
+Handles destination recommendations, packing suggestions (with chain-of-thought reasoning), and local attractions — augmented with real-time weather, country data, currency exchange rates, and public holidays from external APIs. All external APIs are free and require no API keys (except Groq for the LLM).
 
 ## Architecture
 
@@ -18,13 +18,16 @@ Handles destination recommendations, packing suggestions (with chain-of-thought 
                                         │          │                     │
                                         │    ┌─────┴─────┐              │
                                         │    ▼           ▼              │
-                                        │  Tools      Groq LLM         │
-                                        │  ├─ Weather   (Llama 4       │
-                                        │  └─ Country    Scout)        │
+                                        │  Tools        Groq LLM       │
+                                        │  ├─ Weather    (Llama 4     │
+                                        │  ├─ Country     Scout)      │
+                                        │  ├─ Exchange               │
+                                        │  └─ Holidays               │
                                         └──────────────────────────────┘
-                                               │           │
-                                               ▼           ▼
-                                        OpenWeatherMap  RestCountries
+                                             │    │    │    │
+                                             ▼    ▼    ▼    ▼
+                                        Open- Rest  Frank- Nager
+                                        Meteo Count furter .Date
 ```
 
 ## Prerequisites
@@ -33,7 +36,6 @@ Handles destination recommendations, packing suggestions (with chain-of-thought 
 - **[uv](https://docs.astral.sh/uv/)** (Python package manager)
 - **Node.js 18+** and npm
 - **Groq API key** (free): https://console.groq.com
-- **OpenWeatherMap API key** (free): https://openweathermap.org/api
 
 ## Quick Start
 
@@ -42,9 +44,9 @@ Handles destination recommendations, packing suggestions (with chain-of-thought 
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env and add your API keys:
+# Edit .env and add your Groq API key:
 #   GROQ_API_KEY=your_key_here
-#   OPENWEATHER_API_KEY=your_key_here
+# (All other APIs are free and require no keys)
 ```
 
 ### 2. Start the backend
@@ -113,7 +115,7 @@ uv run pytest tests/ -v
 │   ├── app/
 │   │   ├── main.py        # FastAPI app with CORS and endpoints
 │   │   ├── agent.py       # LangGraph ReAct agent setup
-│   │   ├── tools.py       # Weather and country info tools
+│   │   ├── tools.py       # Weather, country, exchange rate, holiday tools
 │   │   ├── prompts.py     # System prompt engineering
 │   │   └── schemas.py     # Request/response models
 │   ├── pyproject.toml
@@ -132,7 +134,7 @@ uv run pytest tests/ -v
 
 - **3 Travel Query Types:** Destination recommendations, packing lists, local attractions
 - **Chain-of-Thought Reasoning:** Packing suggestions use step-by-step reasoning with weather data
-- **External Data Augmentation:** Real-time weather (OpenWeatherMap) and country info (RestCountries)
+- **External Data Augmentation:** Weather forecasts (Open-Meteo), country info (RestCountries), exchange rates (Frankfurter), and public holidays (Nager.Date) — all free, no API keys
 - **Smart Tool Routing:** Agent decides when to call APIs vs. use LLM knowledge based on query type
 - **Conversation Memory:** Context persists across messages via LangGraph checkpointer
 - **Error Handling:** Graceful fallbacks when tools fail, honest uncertainty acknowledgment
@@ -154,7 +156,9 @@ See the `transcripts/` directory for annotated example conversations demonstrati
 | Agent Framework | LangGraph (ReAct)            | Modern agent pattern with built-in memory         |
 | Backend         | FastAPI                      | Async-native, auto-docs, Pydantic integration     |
 | Frontend        | Next.js + Tailwind           | Fast development, modern React, utility CSS       |
-| Weather API     | OpenWeatherMap               | Free tier, reliable, global coverage              |
+| Weather API     | Open-Meteo + Nominatim       | Free, no key, 7-day forecasts, geocoding          |
 | Country API     | RestCountries                | Free, no key needed, comprehensive data           |
+| Exchange Rates  | Frankfurter (ECB data)       | Free, no key, real-time currency conversion       |
+| Holidays API    | Nager.Date                   | Free, no key, public holidays by country          |
 
-> **Note:** Groq provides a free-tier API with no credit card required, satisfying the assignment's requirement for a free LLM API. Rate limits apply but are sufficient for development and demo use.
+> **Note:** Groq provides a free-tier API with no credit card required, satisfying the assignment's requirement for a free LLM API. All four external data APIs (Open-Meteo, RestCountries, Frankfurter, Nager.Date) are completely free and require no API keys or registration.

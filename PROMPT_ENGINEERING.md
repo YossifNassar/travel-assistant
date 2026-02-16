@@ -19,12 +19,14 @@ This document explains the key prompt engineering decisions behind the Travel As
 
 **Decision:** The system prompt contains explicit rules for when to use external APIs versus LLM knowledge.
 
-**Three categories:**
-- **Weather tool:** Used for current conditions, packing, weather-dependent planning
-- **Country info tool:** Used for factual queries (currency, language, timezone)
+**Five categories:**
+- **Weather tool (Open-Meteo):** Used for current conditions + 7-day forecast, packing, weather-dependent planning
+- **Country info tool (RestCountries):** Used for factual queries (currency, language, timezone)
+- **Exchange rate tool (Frankfurter):** Used for currency conversion and budget advice
+- **Public holidays tool (Nager.Date):** Used for flagging holidays, festivals, or potential closures
 - **LLM knowledge:** Used for subjective recommendations, cultural tips, itineraries
 
-**Why:** Without clear routing rules, the LLM either over-relies on tools (calling weather API for every message) or under-uses them (answering currency questions from memory, risking outdated info). Explicit rules in the prompt give the model a clear decision framework.
+**Why:** Without clear routing rules, the LLM either over-relies on tools (calling weather API for every message) or under-uses them (answering currency questions from memory, risking outdated info). Explicit rules in the prompt give the model a clear decision framework. All four external APIs are free and require no API keys, making the system easy to set up.
 
 **Alternative considered:** A separate classifier/router node in the LangGraph that determines tool use before the main agent. Rejected because the ReAct pattern with good tool descriptions handles this well — adding a router would increase latency without meaningful improvement for this use case.
 
