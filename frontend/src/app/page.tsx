@@ -42,6 +42,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Generate thread ID on mount
@@ -49,10 +50,21 @@ export default function Home() {
     setThreadId(generateId());
   }, []);
 
-  // Auto-scroll to bottom on new messages
+  // Scroll: when loading starts, scroll to typing indicator at bottom.
+  // When a new message arrives, scroll to the START of that message.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+    if (isLoading) {
+      // User just sent a message — scroll to bottom to show typing indicator
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      // Scroll to the top of the latest message so user reads from the beginning
+      lastMessageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [messages]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -213,9 +225,10 @@ export default function Home() {
           ) : (
             /* Message list */
             <div className="flex flex-col gap-5">
-              {messages.map((msg) => (
+              {messages.map((msg, idx) => (
                 <div
                   key={msg.id}
+                  ref={idx === messages.length - 1 ? lastMessageRef : undefined}
                   className={`flex ${
                     msg.role === "user" ? "justify-end" : "justify-start"
                   }`}
