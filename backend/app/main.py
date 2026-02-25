@@ -8,13 +8,13 @@ load_dotenv()  # Load .env before anything else uses env vars
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.schemas import ChatRequest, ChatResponse
-from app.agent import chat
+from app.agent import chat, chat_stream
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -32,7 +32,7 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["20/minute"])
 # ---------------------------------------------------------------------------
 app = FastAPI(
     title="Travel Assistant API",
-    description="AI-powered travel planning assistant using LangGraph + Groq",
+    description="AI-powered travel planning assistant using LangGraph + OpenAI",
     version="1.0.0",
 )
 
@@ -89,7 +89,7 @@ async def health():
 @app.post("/chat", response_model=ChatResponse)
 @limiter.limit("20/minute")
 async def chat_endpoint(request: Request, chat_request: ChatRequest):
-    """Process a user message and return the assistant's response.
+    """Process a user message and return the assistant's response (non-streaming).
 
     Maintains conversation context via thread_id.
     """
@@ -109,4 +109,29 @@ async def chat_endpoint(request: Request, chat_request: ChatRequest):
     logger.info(f"[thread={thread_id}] Assistant: {response[:80]}...")
 
     return ChatResponse(response=response, thread_id=thread_id)
+
+
+@app.post("/chat/stream")
+@limiter.limit("20/minute")
+async def chat_stream_endpoint(request: Request, chat_request: ChatRequest):
+    """Stream the assistant's response as Server-Sent Events.
+
+    SSE event types:
+      token   — incremental text chunk
+      replace — replace all streamed content (guardrail triggered)
+      done    — stream complete (includes thread_id)
+      error   — processing error
+    """
+    thread_id = chat_request.get_thread_id()
+    logger.info(f"[thread={thread_id}] User (stream): {chat_request.message[:80]}...")
+
+    return StreamingResponse(
+        chat_stream(chat_request.message, thread_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
     

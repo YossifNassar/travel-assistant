@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, FormEvent } from "react";
+import { useState, useRef, useEffect, FormEvent, useCallback } from "react";
 import Markdown from "react-markdown";
 
 // ---------------------------------------------------------------------------
@@ -30,7 +30,6 @@ function generateId(): string {
   return Math.random().toString(36).substring(2, 12);
 }
 
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -42,29 +41,22 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const lastMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const prevMessageCount = useRef(0);
 
-  // Generate thread ID on mount
   useEffect(() => {
     setThreadId(generateId());
   }, []);
 
-  // Scroll: when loading starts, scroll to typing indicator at bottom.
-  // When a new message arrives, scroll to the START of that message.
+  // Auto-scroll: jump to bottom while streaming, smooth-scroll on new messages
   useEffect(() => {
     if (isLoading) {
-      // User just sent a message — scroll to bottom to show typing indicator
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+    } else if (messages.length > prevMessageCount.current) {
+      prevMessageCount.current = messages.length;
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [isLoading]);
-
-  useEffect(() => {
-    if (messages.length > 0) {
-      // Scroll to the top of the latest message so user reads from the beginning
-      lastMessageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [messages]);
+  }, [messages, isLoading]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -75,58 +67,117 @@ export default function Home() {
     }
   }, [input]);
 
-  async function sendMessage(text: string) {
-    if (!text.trim() || isLoading) return;
+  const sendMessage = useCallback(
+    async (text: string) => {
+      if (!text.trim() || isLoading) return;
 
-    const userMessage: Message = {
-      id: generateId(),
-      role: "user",
-      content: text.trim(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setError(null);
-    setIsLoading(true);
-
-    try {
-      const res = await fetch(`${API_URL}/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMessage.content,
-          thread_id: threadId,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error(`Server error (${res.status})`);
-      }
-
-      const data = await res.json();
-
-      // Update thread_id if server assigned one
-      if (data.thread_id) {
-        setThreadId(data.thread_id);
-      }
-
-      const assistantMessage: Message = {
+      const userMessage: Message = {
         id: generateId(),
-        role: "assistant",
-        content: data.response,
+        role: "user",
+        content: text.trim(),
       };
 
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to send message";
-      setError(errorMsg);
-    } finally {
-      setIsLoading(false);
-      // Re-focus input
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }
+      const assistantId = generateId();
+      const assistantStub: Message = {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+      };
+
+      setMessages((prev) => [...prev, userMessage, assistantStub]);
+      setInput("");
+      setError(null);
+      setIsLoading(true);
+
+      try {
+        const res = await fetch(`${API_URL}/chat/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: userMessage.content,
+            thread_id: threadId,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`Server error (${res.status})`);
+        }
+
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // SSE events are separated by double newlines
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+
+          for (const part of parts) {
+            if (!part.trim()) continue;
+
+            const lines = part.split("\n");
+            let eventType = "message";
+            let data = "";
+
+            for (const line of lines) {
+              if (line.startsWith("event: ")) {
+                eventType = line.slice(7);
+              } else if (line.startsWith("data: ")) {
+                data = line.slice(6);
+              }
+            }
+
+            if (!data) continue;
+
+            const parsed = JSON.parse(data);
+
+            if (eventType === "token") {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantId
+                    ? { ...msg, content: msg.content + parsed }
+                    : msg
+                )
+              );
+            } else if (eventType === "replace") {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === assistantId ? { ...msg, content: parsed } : msg
+                )
+              );
+            } else if (eventType === "done") {
+              if (parsed.thread_id) {
+                setThreadId(parsed.thread_id);
+              }
+            } else if (eventType === "error") {
+              setError(typeof parsed === "string" ? parsed : JSON.stringify(parsed));
+            }
+          }
+        }
+      } catch (err) {
+        const errorMsg =
+          err instanceof Error ? err.message : "Failed to send message";
+        setError(errorMsg);
+        // Remove the empty assistant stub if nothing was streamed
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.id === assistantId && !last.content) {
+            return prev.slice(0, -1);
+          }
+          return prev;
+        });
+      } finally {
+        setIsLoading(false);
+        setTimeout(() => inputRef.current?.focus(), 50);
+      }
+    },
+    [isLoading, threadId]
+  );
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -144,6 +195,7 @@ export default function Home() {
     setMessages([]);
     setThreadId(generateId());
     setError(null);
+    prevMessageCount.current = 0;
     inputRef.current?.focus();
   }
 
@@ -228,7 +280,6 @@ export default function Home() {
               {messages.map((msg, idx) => (
                 <div
                   key={msg.id}
-                  ref={idx === messages.length - 1 ? lastMessageRef : undefined}
                   className={`flex ${
                     msg.role === "user" ? "justify-end" : "justify-start"
                   }`}
@@ -241,24 +292,35 @@ export default function Home() {
                     }`}
                   >
                     {msg.role === "assistant" ? (
-                      <Markdown>{msg.content}</Markdown>
+                      msg.content ? (
+                        <Markdown
+                          components={{
+                            a: ({ href, children }) => (
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {children}
+                              </a>
+                            ),
+                          }}
+                        >
+                          {msg.content}
+                        </Markdown>
+                      ) : isLoading ? (
+                        <div className="flex gap-1.5 items-center py-1">
+                          <span className="typing-dot w-2 h-2 bg-muted rounded-full" />
+                          <span className="typing-dot w-2 h-2 bg-muted rounded-full" />
+                          <span className="typing-dot w-2 h-2 bg-muted rounded-full" />
+                        </div>
+                      ) : null
                     ) : (
                       msg.content
                     )}
                   </div>
                 </div>
               ))}
-
-              {/* Typing indicator */}
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-surface border border-border rounded-2xl rounded-bl-md px-5 py-3 flex gap-1.5 items-center">
-                    <span className="typing-dot w-2 h-2 bg-muted rounded-full" />
-                    <span className="typing-dot w-2 h-2 bg-muted rounded-full" />
-                    <span className="typing-dot w-2 h-2 bg-muted rounded-full" />
-                  </div>
-                </div>
-              )}
 
               {/* Error message */}
               {error && (

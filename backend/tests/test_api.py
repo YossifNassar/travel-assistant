@@ -2,6 +2,8 @@
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 
 # ---------------------------------------------------------------------------
 # Health endpoint
@@ -55,6 +57,33 @@ class TestChatEndpoint:
         resp = client.post("/chat", json={"message": "Hello"})
         assert resp.status_code == 500
         assert "something went wrong" in resp.json()["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Streaming endpoint
+# ---------------------------------------------------------------------------
+class TestChatStreamEndpoint:
+    @patch("app.main.chat_stream")
+    def test_stream_returns_sse(self, mock_stream, client):
+        async def fake_stream(message, thread_id):
+            yield 'event: token\ndata: "Hello"\n\n'
+            yield 'event: done\ndata: {"thread_id": "t1"}\n\n'
+
+        mock_stream.return_value = fake_stream("hi", "t1")
+        resp = client.post("/chat/stream", json={"message": "Hello"})
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        body = resp.text
+        assert "event: token" in body
+        assert "event: done" in body
+
+    def test_stream_empty_message_rejected(self, client):
+        resp = client.post("/chat/stream", json={"message": ""})
+        assert resp.status_code == 422
+
+    def test_stream_missing_message_rejected(self, client):
+        resp = client.post("/chat/stream", json={})
+        assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------

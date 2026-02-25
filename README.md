@@ -1,8 +1,8 @@
 # Travel Assistant
 
-AI-powered travel planning assistant built with **Next.js**, **FastAPI**, **LangGraph**, and **Groq**.
+AI-powered travel planning assistant built with **Next.js**, **FastAPI**, **LangGraph**, and **OpenAI (GPT-5-mini)**.
 
-Handles destination recommendations, packing suggestions (with chain-of-thought reasoning), and local attractions — augmented with real-time weather, country data, currency exchange rates, and public holidays from external APIs. All external APIs are free and require no API keys (except Groq for the LLM).
+Handles destination recommendations, packing suggestions (with chain-of-thought reasoning), and local attractions — augmented with real-time weather, country data, currency exchange rates, and public holidays from external APIs. All external data APIs are free and require no API keys.
 
 ## Architecture
 
@@ -18,9 +18,9 @@ Handles destination recommendations, packing suggestions (with chain-of-thought 
                                         │          │                     │
                                         │    ┌─────┴─────┐              │
                                         │    ▼           ▼              │
-                                        │  Tools        Groq LLM       │
-                                        │  ├─ Weather    (Llama 4     │
-                                        │  ├─ Country     Scout)      │
+                                        │  Tools       OpenAI LLM      │
+                                        │  ├─ Weather    (GPT-5-mini) │
+                                        │  ├─ Country                 │
                                         │  ├─ Exchange               │
                                         │  └─ Holidays               │
                                         └──────────────────────────────┘
@@ -35,7 +35,7 @@ Handles destination recommendations, packing suggestions (with chain-of-thought 
 - **Python 3.11+**
 - **[uv](https://docs.astral.sh/uv/)** (Python package manager)
 - **Node.js 18+** and npm
-- **Groq API key** (free): https://console.groq.com
+- **OpenAI API key**: https://platform.openai.com/api-keys
 
 ## Quick Start
 
@@ -44,43 +44,38 @@ Handles destination recommendations, packing suggestions (with chain-of-thought 
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env and add your Groq API key:
-#   GROQ_API_KEY=your_key_here
+# Edit .env and add your OpenAI API key:
+#   OPENAI_API_KEY=your_key_here
 # (All other APIs are free and require no keys)
 ```
 
-### 2. Start the backend
+### 2. Run both servers
 
 ```bash
-cd backend
-uv sync
-uv run uvicorn app.main:app --reload --port 8001
+./run.sh
 ```
 
-The API will be available at http://localhost:8001. Test with:
+This installs dependencies and starts both the backend (http://localhost:8001) and frontend (http://localhost:3000). Press `Ctrl+C` to stop both.
+
+**Or start them separately:**
 
 ```bash
-curl http://localhost:8001/health
+# Backend
+cd backend && uv sync && uv run uvicorn app.main:app --reload --port 8001
+
+# Frontend (in another terminal)
+cd frontend && npm install && npm run dev
 ```
-
-### 3. Start the frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open http://localhost:3000 in your browser.
 
 ## API Endpoints
 
-| Method | Path      | Description                    |
-|--------|-----------|--------------------------------|
-| GET    | `/health` | Health check                   |
-| POST   | `/chat`   | Send a message, get a response |
+| Method | Path           | Description                                |
+|--------|----------------|--------------------------------------------|
+| GET    | `/health`      | Health check                               |
+| POST   | `/chat`        | Send a message, get a JSON response        |
+| POST   | `/chat/stream` | Send a message, get a streaming SSE response |
 
-### POST /chat
+### POST /chat (request-response)
 
 **Request:**
 ```json
@@ -97,6 +92,26 @@ Open http://localhost:3000 in your browser.
   "thread_id": "abc123"
 }
 ```
+
+### POST /chat/stream (Server-Sent Events)
+
+Same request body as `/chat`. Returns a stream of SSE events:
+
+```
+event: token
+data: "Here are "
+
+event: token
+data: "3 great beach "
+
+event: token
+data: "destinations..."
+
+event: done
+data: {"thread_id": "abc123"}
+```
+
+Event types: `token` (incremental text), `replace` (guardrail override), `done` (stream complete), `error`.
 
 The `thread_id` maintains conversation context. Omit it on the first message to have one auto-generated; include it on subsequent messages for follow-up questions.
 
@@ -132,13 +147,15 @@ uv run pytest tests/ -v
 
 ## Key Features
 
+- **Real-time Streaming (SSE):** Token-by-token streaming via Server-Sent Events for a modern chat experience
 - **3 Travel Query Types:** Destination recommendations, packing lists, local attractions
 - **Chain-of-Thought Reasoning:** Packing suggestions use step-by-step reasoning with weather data
-- **External Data Augmentation:** Weather forecasts (Open-Meteo), country info (RestCountries), exchange rates (Frankfurter), and public holidays (Nager.Date) — all free, no API keys
+- **External Data Augmentation:** Weather forecasts (Open-Meteo), country info (RestCountries), exchange rates (Frankfurter), public holidays (Nager.Date), and web search (Tavily) — all free external data APIs require no keys
 - **Smart Tool Routing:** Agent decides when to call APIs vs. use LLM knowledge based on query type
-- **Conversation Memory:** Context persists across messages via LangGraph checkpointer
+- **Conversation Memory:** Context persists across messages in-memory per thread
+- **Input/Output Guardrails:** Multi-agent validation blocks off-topic queries and unsafe responses
 - **Error Handling:** Graceful fallbacks when tools fail, honest uncertainty acknowledgment
-- **Modern Chat UI:** Clean interface with typing indicators, suggestions, and auto-scroll
+- **Modern Chat UI:** Clean interface with streaming text, typing indicators, and auto-scroll
 
 ## Sample Conversations
 
@@ -152,7 +169,7 @@ See the `transcripts/` directory for annotated example conversations demonstrati
 
 | Component       | Technology                   | Why                                              |
 |-----------------|------------------------------|--------------------------------------------------|
-| LLM             | Groq (Llama 4 Scout)         | Free tier (no credit card), fast inference, strong tool calling |
+| LLM             | OpenAI (GPT-5-mini)          | Fast inference, strong tool calling, excellent reasoning        |
 | Agent Framework | LangGraph (ReAct)            | Modern agent pattern with built-in memory         |
 | Backend         | FastAPI                      | Async-native, auto-docs, Pydantic integration     |
 | Frontend        | Next.js + Tailwind           | Fast development, modern React, utility CSS       |
@@ -161,4 +178,4 @@ See the `transcripts/` directory for annotated example conversations demonstrati
 | Exchange Rates  | Frankfurter (ECB data)       | Free, no key, real-time currency conversion       |
 | Holidays API    | Nager.Date                   | Free, no key, public holidays by country          |
 
-> **Note:** Groq provides a free-tier API with no credit card required, satisfying the assignment's requirement for a free LLM API. All four external data APIs (Open-Meteo, RestCountries, Frankfurter, Nager.Date) are completely free and require no API keys or registration.
+> **Note:** The project uses OpenAI's GPT-5-mini model. All four external data APIs (Open-Meteo, RestCountries, Frankfurter, Nager.Date) are completely free and require no API keys or registration.
